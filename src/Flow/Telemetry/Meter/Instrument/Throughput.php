@@ -6,32 +6,32 @@ namespace Flow\Telemetry\Meter\Instrument;
 
 use Flow\Telemetry\Attributes;
 use Flow\Telemetry\{InstrumentationScope, Resource};
-use Flow\Telemetry\Meter\{AggregationTemporality, Metric, MetricType};
+use Flow\Telemetry\Meter\{AggregationTemporality, Metric, MetricType, TimeUnit};
 use Flow\Telemetry\Meter\Exemplar\{ExemplarFilter, ExemplarReservoir, SimpleFixedSizeExemplarReservoir, TraceBasedExemplarFilter};
 use Flow\Telemetry\Tracer\SpanContext;
 use Psr\Clock\ClockInterface;
 
 /**
- * UpDownCounter instrument for recording increments and decrements.
+ * Throughput instrument for tracking rate of items processed over time.
  *
- * Unlike Counter, UpDownCounter supports negative values and can both
- * increase and decrease. Use for tracking values that can go up and down.
+ * Throughput tracks accumulated count and calculates rate (count/time unit).
+ * Unlike Gauge which replaces values, Throughput accumulates via add() calls.
+ * The timer starts from the first add() call for each attribute combination.
  *
  * Example usage:
  * ```php
- * $counter = $meter->createUpDownCounter('queue.size', 'items', 'Current queue size');
- * $counter->add(5, ['queue.name' => 'tasks']);  // Added 5 items
- * $counter->add(-2, ['queue.name' => 'tasks']); // Removed 2 items
+ * $throughput = $meter->createThroughput('dataframe_throughput', 'rows', 'Rows processed per second');
+ * $throughput->add(100, ['source' => 'csv']); // Process 100 rows
+ * $throughput->add(150, ['source' => 'csv']); // Process 150 more rows
+ * $metrics = $throughput->collect(); // Returns rate as value (rows/s)
  * ```
- *
- * @see https://opentelemetry.io/docs/specs/otel/metrics/api/#updowncounter
  */
-final class UpDownCounter implements Instrument
+final class Throughput implements Instrument
 {
     /**
      * Aggregations by attribute key.
      *
-     * @var array<string, array{sum: float|int, attributes: array<string, bool|float|int|string>, reservoir: ExemplarReservoir}>
+     * @var array<string, array{count: int, startTimeNs: int, startedAt: \DateTimeImmutable, attributes: array<string, bool|float|int|string>, reservoir: ExemplarReservoir}>
      */
     private array $aggregations = [];
 
@@ -42,8 +42,10 @@ final class UpDownCounter implements Instrument
      * @param ClockInterface $clock Clock for timestamps
      * @param AggregationTemporality $temporality Aggregation temporality
      * @param ExemplarFilter $exemplarFilter Filter for exemplar sampling
-     * @param null|string $unit Unit of measurement
+     * @param null|string $unit Unit of measurement (e.g., 'rows', 'bytes')
      * @param null|string $description Human-readable description
+     * @param null|int $ratePrecision Number of decimal places for rate calculation (default: 2, null for no rounding)
+     * @param TimeUnit $timeUnit Time unit for rate calculation (default: SECONDS)
      */
     public function __construct(
         private readonly string $name,
@@ -54,17 +56,19 @@ final class UpDownCounter implements Instrument
         private readonly ExemplarFilter $exemplarFilter = new TraceBasedExemplarFilter(),
         private readonly ?string $unit = null,
         private readonly ?string $description = null,
+        private readonly ?int $ratePrecision = 2,
+        private readonly TimeUnit $timeUnit = TimeUnit::SECONDS,
     ) {
     }
 
     /**
-     * Add a value to the counter (can be negative).
+     * Add to the accumulated count.
      *
-     * @param float|int $amount Amount to add (positive or negative)
+     * @param int $count Number of items to add
      * @param array<string, array<bool|float|int|string>|bool|float|int|string>|Attributes $attributes Categorization attributes
      * @param null|SpanContext $context Optional span context for exemplar capture
      */
-    public function add(int|float $amount, array|Attributes $attributes = [], ?SpanContext $context = null) : void
+    public function add(int $count, array|Attributes $attributes = [], ?SpanContext $context = null) : void
     {
         $normalized = $attributes instanceof Attributes ? $attributes->normalize() : $attributes;
         /** @var array<string, bool|float|int|string> $attrs */
@@ -73,17 +77,19 @@ final class UpDownCounter implements Instrument
 
         if (!isset($this->aggregations[$key])) {
             $this->aggregations[$key] = [
-                'sum' => 0,
+                'count' => 0,
+                'startTimeNs' => \hrtime(true),
+                'startedAt' => $this->clock->now(),
                 'attributes' => $attrs,
                 'reservoir' => new SimpleFixedSizeExemplarReservoir(1),
             ];
         }
 
-        $this->aggregations[$key]['sum'] += $amount;
+        $this->aggregations[$key]['count'] += $count;
 
-        if ($context !== null && $this->exemplarFilter->shouldSample($context, $amount, $attrs)) {
+        if ($context !== null && $this->exemplarFilter->shouldSample($context, $count, $attrs)) {
             $this->aggregations[$key]['reservoir']->offer(
-                $amount,
+                $count,
                 $attrs,
                 $context,
                 $this->clock->now(),
@@ -94,22 +100,36 @@ final class UpDownCounter implements Instrument
     public function collect() : array
     {
         $metrics = [];
+        $fullUnit = $this->unit !== null
+            ? $this->unit . '/' . $this->timeUnit->value
+            : null;
 
         foreach ($this->aggregations as $data) {
+            $durationNs = \hrtime(true) - $data['startTimeNs'];
+            $durationInTimeUnit = $this->timeUnit->fromNanoseconds($durationNs);
+            $rawRate = $durationInTimeUnit > 0
+                ? $data['count'] / $durationInTimeUnit
+                : 0.0;
+
+            $rate = $this->ratePrecision !== null
+                ? \round($rawRate, $this->ratePrecision)
+                : $rawRate;
+
             $exemplars = $data['reservoir']->collect();
 
             $metrics[] = new Metric(
                 name: $this->name,
-                type: MetricType::UP_DOWN_COUNTER,
-                value: $data['sum'],
+                type: MetricType::GAUGE,
+                value: $rate,
                 attributes: Attributes::create($data['attributes']),
                 timestamp: $this->clock->now(),
                 resource: $this->resource,
                 scope: $this->scope,
-                unit: $this->unit,
+                unit: $fullUnit,
                 description: $this->description,
                 temporality: $this->temporality,
                 exemplars: $exemplars,
+                startTimestamp: $data['startedAt'],
             );
         }
 
@@ -130,6 +150,8 @@ final class UpDownCounter implements Instrument
 
     public function unit() : ?string
     {
-        return $this->unit;
+        return $this->unit !== null
+            ? $this->unit . '/' . $this->timeUnit->value
+            : null;
     }
 }
