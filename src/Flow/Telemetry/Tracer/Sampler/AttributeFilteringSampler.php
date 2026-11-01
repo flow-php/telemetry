@@ -12,22 +12,9 @@ use Flow\Telemetry\Filter\AttributeSource;
 use Flow\Telemetry\Tracer\Span;
 
 /**
- * Drops spans whose start-time attributes match an {@see AttributeFilter}, and
- * defers every other span to a delegate sampler.
- *
- * The decision is made at span start, so a matched span becomes non-recording and
- * is never handed to a processor or exporter (no attributes accumulate, no onEnd).
- *
- * Only attributes available at span start are visible here - attributes added
- * during the span's lifetime (status codes, durations) are not. End-state
- * filtering remains the job of a span processor or tail sampling.
- *
- * The matcher tree, its compiled drop closure, the inspected
- * {@see AttributeSource}s and the exclude polarity are all reused from the shared
- * {@see AttributeFilter}: a match drops the span ({@see AttributeFilter::$exclude}
- * true, the default) or keeps ONLY matching spans (exclude false).
+ * Sees start-time attributes only; end-state filtering is AttributeFilteringSpanProcessor's job.
  */
-final readonly class AttributeMatchingSampler implements Sampler
+final readonly class AttributeFilteringSampler implements Sampler
 {
     /**
      * @var Closure(Attributes ...): bool
@@ -49,7 +36,7 @@ final readonly class AttributeMatchingSampler implements Sampler
 
     public function __toString(): string
     {
-        return 'AttributeMatchingSampler';
+        return 'AttributeFilteringSampler';
     }
 
     public function shouldSample(Context $parentContext, Span $span): SamplingResult

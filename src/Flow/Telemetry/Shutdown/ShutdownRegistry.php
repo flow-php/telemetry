@@ -11,16 +11,9 @@ use function array_reverse;
 use function register_shutdown_function;
 
 /**
- * Registers Telemetry instances for shutdown at process end.
- *
- * Instances are held through weak references, so registration does not keep
- * a Telemetry object graph alive - an instance that was garbage collected
- * before process end (a discarded test kernel, a rebooted container) is
- * silently skipped. On invocation the handler re-registers its work at the
- * end of the shutdown-function queue, so telemetry drains after other
- * registered shutdown functions (loggers, sessions, ...) have run.
+ * Weak refs: never keeps Telemetry alive; re-queues to drain after other shutdown functions.
  */
-final class ShutdownHandler
+final class ShutdownRegistry
 {
     /**
      * @var null|array<int, WeakReference<Telemetry>>

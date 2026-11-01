@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Flow\Telemetry\Tests\Unit\Resource\Detector;
 
-use Flow\Telemetry\Resource\Detector\ManualDetector;
+use Flow\Telemetry\Resource\Detector\StaticDetector;
 use PHPUnit\Framework\TestCase;
 
-final class ManualDetectorTest extends TestCase
+final class StaticDetectorTest extends TestCase
 {
     public function test_detect_returns_empty_resource_for_empty_attributes(): void
     {
-        $detector = new ManualDetector([]);
+        $detector = new StaticDetector([]);
         $resource = $detector->detect();
 
         static::assertTrue($resource->isEmpty());
@@ -19,7 +19,7 @@ final class ManualDetectorTest extends TestCase
 
     public function test_detect_returns_provided_attributes(): void
     {
-        $detector = new ManualDetector([
+        $detector = new StaticDetector([
             'service.name' => 'my-service',
             'service.version' => '1.0.0',
         ]);
@@ -31,7 +31,7 @@ final class ManualDetectorTest extends TestCase
 
     public function test_detect_supports_array_values(): void
     {
-        $detector = new ManualDetector([
+        $detector = new StaticDetector([
             'tags' => ['production', 'web'],
         ]);
         $resource = $detector->detect();
@@ -41,7 +41,7 @@ final class ManualDetectorTest extends TestCase
 
     public function test_detect_supports_boolean_values(): void
     {
-        $detector = new ManualDetector([
+        $detector = new StaticDetector([
             'enabled' => true,
             'debug' => false,
         ]);
@@ -53,7 +53,7 @@ final class ManualDetectorTest extends TestCase
 
     public function test_detect_supports_numeric_values(): void
     {
-        $detector = new ManualDetector([
+        $detector = new StaticDetector([
             'port' => 8080,
             'ratio' => 0.5,
         ]);

@@ -16,17 +16,17 @@ use PHPUnit\Framework\TestCase;
 
 use function Flow\Telemetry\DSL\always_off_sampler;
 use function Flow\Telemetry\DSL\attribute_filter;
-use function Flow\Telemetry\DSL\attribute_matching_sampler;
+use function Flow\Telemetry\DSL\attribute_filtering_sampler;
 use function Flow\Telemetry\DSL\attribute_rule;
 
-final class AttributeMatchingSamplerTest extends TestCase
+final class AttributeFilteringSamplerTest extends TestCase
 {
     public function test_drops_span_matching_start_attribute(): void
     {
         $tmp = TempDir::create();
 
         try {
-            $sampler = attribute_matching_sampler(attribute_filter(
+            $sampler = attribute_filtering_sampler(attribute_filter(
                 attribute_rule('http.route', MatchMode::EQUAL, '/health'),
                 cacheDir: $tmp->path(),
             ));
@@ -45,7 +45,7 @@ final class AttributeMatchingSamplerTest extends TestCase
         $tmp = TempDir::create();
 
         try {
-            $sampler = attribute_matching_sampler(attribute_filter(
+            $sampler = attribute_filtering_sampler(attribute_filter(
                 attribute_rule('http.route', MatchMode::EQUAL, '/health'),
                 cacheDir: $tmp->path(),
             ));
@@ -65,7 +65,7 @@ final class AttributeMatchingSamplerTest extends TestCase
 
         try {
             // delegate drops everything, so a non-matching span is dropped by the delegate
-            $sampler = attribute_matching_sampler(
+            $sampler = attribute_filtering_sampler(
                 attribute_filter(attribute_rule('http.route', MatchMode::EQUAL, '/health'), cacheDir: $tmp->path()),
                 always_off_sampler(),
             );
@@ -85,7 +85,7 @@ final class AttributeMatchingSamplerTest extends TestCase
 
         try {
             // keep ONLY matching: matching span defers to delegate (sampled), others dropped
-            $sampler = attribute_matching_sampler(attribute_filter(
+            $sampler = attribute_filtering_sampler(attribute_filter(
                 attribute_rule('http.route', MatchMode::EQUAL, '/checkout'),
                 exclude: false,
                 cacheDir: $tmp->path(),
@@ -110,7 +110,7 @@ final class AttributeMatchingSamplerTest extends TestCase
 
         try {
             // ResourceMother::default() carries service.name = test-service
-            $sampler = attribute_matching_sampler(attribute_filter(
+            $sampler = attribute_filtering_sampler(attribute_filter(
                 attribute_rule('service.name', MatchMode::EQUAL, 'test-service'),
                 sources: [AttributeSource::RESOURCE],
                 cacheDir: $tmp->path(),
@@ -130,12 +130,12 @@ final class AttributeMatchingSamplerTest extends TestCase
         $tmp = TempDir::create();
 
         try {
-            $sampler = attribute_matching_sampler(attribute_filter(
+            $sampler = attribute_filtering_sampler(attribute_filter(
                 attribute_rule('x', MatchMode::EQUAL, 'y'),
                 cacheDir: $tmp->path(),
             ));
 
-            static::assertSame('AttributeMatchingSampler', (string) $sampler);
+            static::assertSame('AttributeFilteringSampler', (string) $sampler);
         } finally {
             $tmp->remove();
         }

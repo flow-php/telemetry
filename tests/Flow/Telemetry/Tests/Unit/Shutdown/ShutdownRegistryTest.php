@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Flow\Telemetry\Tests\Unit\Shutdown;
 
 use ArrayObject;
-use Flow\Telemetry\Shutdown\ShutdownHandler;
+use Flow\Telemetry\Shutdown\ShutdownRegistry;
 use Flow\Telemetry\Tests\Mother\ShutdownOrderSpanProcessor;
 use Flow\Telemetry\Tests\Mother\SpanProcessorSpy;
 use Flow\Telemetry\Tests\Mother\TelemetryMother;
@@ -13,11 +13,11 @@ use PHPUnit\Framework\TestCase;
 
 use function gc_collect_cycles;
 
-final class ShutdownHandlerTest extends TestCase
+final class ShutdownRegistryTest extends TestCase
 {
     protected function setUp(): void
     {
-        ShutdownHandler::invoke();
+        ShutdownRegistry::invoke();
     }
 
     public function test_invoke_shuts_down_registered_telemetry(): void
@@ -26,8 +26,8 @@ final class ShutdownHandlerTest extends TestCase
         $telemetry = TelemetryMother::withSpanProcessor($processor);
         $telemetry->tracer('test');
 
-        ShutdownHandler::register($telemetry);
-        ShutdownHandler::invoke();
+        ShutdownRegistry::register($telemetry);
+        ShutdownRegistry::invoke();
 
         static::assertSame(1, $processor->shutdownCount());
     }
@@ -42,13 +42,13 @@ final class ShutdownHandlerTest extends TestCase
         $keptTelemetry = TelemetryMother::withSpanProcessor($keptProcessor);
         $keptTelemetry->tracer('test');
 
-        ShutdownHandler::register($collectedTelemetry);
-        ShutdownHandler::register($keptTelemetry);
+        ShutdownRegistry::register($collectedTelemetry);
+        ShutdownRegistry::register($keptTelemetry);
 
         unset($collectedTelemetry);
         gc_collect_cycles();
 
-        ShutdownHandler::invoke();
+        ShutdownRegistry::invoke();
 
         static::assertSame(0, $collectedProcessor->shutdownCount());
         static::assertSame(1, $keptProcessor->shutdownCount());
@@ -60,9 +60,9 @@ final class ShutdownHandlerTest extends TestCase
         $telemetry = TelemetryMother::withSpanProcessor($processor);
         $telemetry->tracer('test');
 
-        ShutdownHandler::register($telemetry);
-        ShutdownHandler::invoke();
-        ShutdownHandler::invoke();
+        ShutdownRegistry::register($telemetry);
+        ShutdownRegistry::invoke();
+        ShutdownRegistry::invoke();
 
         static::assertSame(1, $processor->shutdownCount());
     }
@@ -73,15 +73,15 @@ final class ShutdownHandlerTest extends TestCase
         $firstTelemetry = TelemetryMother::withSpanProcessor($firstProcessor);
         $firstTelemetry->tracer('test');
 
-        ShutdownHandler::register($firstTelemetry);
-        ShutdownHandler::invoke();
+        ShutdownRegistry::register($firstTelemetry);
+        ShutdownRegistry::invoke();
 
         $secondProcessor = new SpanProcessorSpy();
         $secondTelemetry = TelemetryMother::withSpanProcessor($secondProcessor);
         $secondTelemetry->tracer('test');
 
-        ShutdownHandler::register($secondTelemetry);
-        ShutdownHandler::invoke();
+        ShutdownRegistry::register($secondTelemetry);
+        ShutdownRegistry::invoke();
 
         static::assertSame(1, $firstProcessor->shutdownCount());
         static::assertSame(1, $secondProcessor->shutdownCount());
@@ -98,9 +98,9 @@ final class ShutdownHandlerTest extends TestCase
         $secondTelemetry = TelemetryMother::withSpanProcessor(new ShutdownOrderSpanProcessor('second', $shutdownLog));
         $secondTelemetry->tracer('test');
 
-        ShutdownHandler::register($firstTelemetry);
-        ShutdownHandler::register($secondTelemetry);
-        ShutdownHandler::invoke();
+        ShutdownRegistry::register($firstTelemetry);
+        ShutdownRegistry::register($secondTelemetry);
+        ShutdownRegistry::invoke();
 
         static::assertSame(['second', 'first'], $shutdownLog->getArrayCopy());
     }
